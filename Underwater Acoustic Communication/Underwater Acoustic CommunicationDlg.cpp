@@ -84,6 +84,10 @@
 #define ST_THREAD_MONITOR			3
 #define ST_THREAD_WAKEUP			4
 
+// State Machine for application
+#define ST_APP_ZERO					1
+#define ST_APP_CONNECTED			2
+#define ST_APP_NETWORKSCAN			3
 
 
 // XBee info from each Node
@@ -182,7 +186,8 @@ CUnderwaterAcousticCommunicationDlg::CUnderwaterAcousticCommunicationDlg(CWnd* p
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 
-	g_xbeeOffset = 0;
+	g_xbeeOffset = 0xFFFFFFFF;
+	m_stApp = ST_APP_ZERO;
 	g_stThread = ST_THREAD_STOP;
 }
 
@@ -646,43 +651,41 @@ int CUnderwaterAcousticCommunicationDlg::TimeSync(char* remote_sh, char* remote_
 	SYSTEMTIME systime;
 
 	err = 1;
-	if (m_serialportFlag == 1) {
-		memset(wbuffer, 0, sizeof(wbuffer));
-		GetLocalTime(&systime);
-		wbuffer[0] = wbuffer[1] = (char)0xFF;
-		wbuffer[2] = wbuffer[3] = 0x00;
-		wbuffer[4] = 0x00;
-		wbuffer[5] = COMMON_CMD;
-		wbuffer[6] = 0x00;
-		wbuffer[7] = 14;
-		wbuffer[8] = (char)(TIMESYNC_CMD >> 8);
-		wbuffer[9] = (char)TIMESYNC_CMD;
-		wbuffer[10] = wbuffer[11] = 0x00;
-		// Month/Day/Year
-		wbuffer[12] = (char)systime.wMonth;
-		wbuffer[13] = (char)systime.wDay;
-		wbuffer[14] = (char)(systime.wYear >> 8);
-		wbuffer[15] = (char)systime.wYear;
-		// HH:MM:SS
-		wbuffer[16] = (char)systime.wHour;
-		wbuffer[17] = (char)systime.wMinute;
-		wbuffer[18] = (char)systime.wSecond;
-		wbuffer[19] = 0x00;
-		// Milliseconds
-		wbuffer[20] = (char)(systime.wMilliseconds >> 8);
-		wbuffer[21] = (char)systime.wMilliseconds;
-		crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 14);
-		wbuffer[22] = (char)(crc >> 24);
-		wbuffer[23] = (char)(crc >> 16);
-		wbuffer[24] = (char)(crc >> 8);
-		wbuffer[25] = (char)crc;
-		memcpy(addr, remote_sh, 4);
-		memcpy((addr + 4), remote_sl, 4);
-		// Here we send Tx request frame and get Rx indicator frame in API mode
-		TxXbeeMsg(wbuffer, 26, addr, rbuffer);
-		if (CheckACK(rbuffer, TIMESYNC_CMD) == 0) {
-			err = 0;
-		}
+	memset(wbuffer, 0, sizeof(wbuffer));
+	GetLocalTime(&systime);
+	wbuffer[0] = wbuffer[1] = (char)0xFF;
+	wbuffer[2] = wbuffer[3] = 0x00;
+	wbuffer[4] = 0x00;
+	wbuffer[5] = COMMON_CMD;
+	wbuffer[6] = 0x00;
+	wbuffer[7] = 14;
+	wbuffer[8] = (char)(TIMESYNC_CMD >> 8);
+	wbuffer[9] = (char)TIMESYNC_CMD;
+	wbuffer[10] = wbuffer[11] = 0x00;
+	// Month/Day/Year
+	wbuffer[12] = (char)systime.wMonth;
+	wbuffer[13] = (char)systime.wDay;
+	wbuffer[14] = (char)(systime.wYear >> 8);
+	wbuffer[15] = (char)systime.wYear;
+	// HH:MM:SS
+	wbuffer[16] = (char)systime.wHour;
+	wbuffer[17] = (char)systime.wMinute;
+	wbuffer[18] = (char)systime.wSecond;
+	wbuffer[19] = 0x00;
+	// Milliseconds
+	wbuffer[20] = (char)(systime.wMilliseconds >> 8);
+	wbuffer[21] = (char)systime.wMilliseconds;
+	crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 14);
+	wbuffer[22] = (char)(crc >> 24);
+	wbuffer[23] = (char)(crc >> 16);
+	wbuffer[24] = (char)(crc >> 8);
+	wbuffer[25] = (char)crc;
+	memcpy(addr, remote_sh, 4);
+	memcpy((addr + 4), remote_sl, 4);
+	// Here we send Tx request frame and get Rx indicator frame in API mode
+	TxXbeeMsg(wbuffer, 26, addr, rbuffer);
+	if (CheckACK(rbuffer, TIMESYNC_CMD) == 0) {
+		err = 0;
 	}
 
 	return err;
@@ -695,33 +698,31 @@ int CUnderwaterAcousticCommunicationDlg::GetModemAddr(char* remote_sh, char* rem
 	int crc, err;
 
 	err = 1;
-	if (m_serialportFlag == 1) {
-		memset(wbuffer, 0, sizeof(wbuffer));
-		wbuffer[0] = wbuffer[1] = (char)0xFF;
-		wbuffer[2] = wbuffer[3] = 0x00;
-		wbuffer[4] = 0x00;
-		wbuffer[5] = COMMON_CMD;
-		wbuffer[6] = 0x00;
-		wbuffer[7] = 4;
-		wbuffer[8] = (char)(MODEMADDR_CMD >> 8);
-		wbuffer[9] = (char)MODEMADDR_CMD;
-		wbuffer[10] = wbuffer[11] = 0x00;
-		crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 4);
-		wbuffer[12] = (char)(crc >> 24);
-		wbuffer[13] = (char)(crc >> 16);
-		wbuffer[14] = (char)(crc >> 8);
-		wbuffer[15] = (char)crc;
-		memcpy(addr, remote_sh, 4);
-		memcpy((addr + 4), remote_sl, 4);
-		// Here we send Tx request frame and get Rx indicator frame in API mode
-		TxXbeeMsg(wbuffer, 16, addr, rbuffer);
-		if (CheckACK(rbuffer, MODEMADDR_CMD) == 0) {
-			*modemAddr = rbuffer[12];
-			err = 0;
-		}
-		else {
-			*modemAddr = 0x0;
-		}
+	memset(wbuffer, 0, sizeof(wbuffer));
+	wbuffer[0] = wbuffer[1] = (char)0xFF;
+	wbuffer[2] = wbuffer[3] = 0x00;
+	wbuffer[4] = 0x00;
+	wbuffer[5] = COMMON_CMD;
+	wbuffer[6] = 0x00;
+	wbuffer[7] = 4;
+	wbuffer[8] = (char)(MODEMADDR_CMD >> 8);
+	wbuffer[9] = (char)MODEMADDR_CMD;
+	wbuffer[10] = wbuffer[11] = 0x00;
+	crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 4);
+	wbuffer[12] = (char)(crc >> 24);
+	wbuffer[13] = (char)(crc >> 16);
+	wbuffer[14] = (char)(crc >> 8);
+	wbuffer[15] = (char)crc;
+	memcpy(addr, remote_sh, 4);
+	memcpy((addr + 4), remote_sl, 4);
+	// Here we send Tx request frame and get Rx indicator frame in API mode
+	TxXbeeMsg(wbuffer, 16, addr, rbuffer);
+	if (CheckACK(rbuffer, MODEMADDR_CMD) == 0) {
+		*modemAddr = rbuffer[12];
+		err = 0;
+	}
+	else {
+		*modemAddr = 0x0;
 	}
 
 
@@ -837,6 +838,11 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::DownloadThread(LPVOID lpPara)
 	struct XBeeInfo* pXbee;
 	char addr[8];
 
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		p_class->MessageBox(L"Please select one node, and then download your file.", MB_OK);
+		g_stThread = ST_THREAD_STOP;
+		return 1;
+	}
 
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	memcpy(addr, pXbee->shAddr, 4);
@@ -870,157 +876,155 @@ int CUnderwaterAcousticCommunicationDlg::ScanNetwork(void)
 	char* ptrMove;
 
 
-	if (m_serialportFlag == 1) {
-		m_serialport.ClearWriteBuffer();
-		m_serialport.ClearReadBuffer();
-		memset(rbuffer, 0, sizeof(rbuffer));
+	m_serialport.ClearWriteBuffer();
+	m_serialport.ClearReadBuffer();
+	memset(rbuffer, 0, sizeof(rbuffer));
 
-		// Configure Netwrok Discovery backoff
-		memset(hex, 0, sizeof(hex));
-		scan_time = m_scantime * 10;
-		if (scan_time > 252) {
-			scan_time = 252;
-			m_scantime = 25;
-		}
-		else if (scan_time < 32) {
-			scan_time = 32;
-			m_scantime = 32;
-		}
-		scanTime[0] = (char)(scan_time >> 8);
-		scanTime[1] = (char)scan_time;
-		LocalXbeeMsg("NT", scanTime, 2);
-		// Send ATND command to do network discovery
-		// Header
-		msg[0] = 0x7E;
-		// Length
-		msg[1] = 0x00;
-		msg[2] = 0x04;
-		// Frame Type
-		msg[3] = 0x08;
-		// Frame ID
-		msg[4] = 0x01;
-		// AT Command
-		msg[5] = 'N';
-		msg[6] = 'D';
-		// Checksum
-		sum = 0;
-		for (i = 0; i < 0x04; i++) {
-			sum += msg[3 + i];
-		}
-		msg[7] = 0xFF - sum;
-		m_txLed.SetOnOff(TRUE);
-		m_serialport.Write(msg, 8);
-		Sleep(50);
-		m_txLed.SetOnOff(FALSE);
-		g_endScan = timer_cnt = 0;
-		memset(rbuffer, 0, sizeof(rbuffer));
-		ptr = rbuffer;
-		do {
-			m_rxLed.SetOnOff(TRUE);
-			if (m_serialport.Read(ptr, 1) == 1) {
-				if (*ptr == 0x7E) {
-					Sleep(5);
-					m_serialport.Read((ptr + 1), 2);
-					frameLen = (char)(ptr[1] >> 8) + (char)ptr[2];
-					Sleep(20);
-					m_serialport.Read((ptr + 3), frameLen + 1);
-					ptrFrom = ptr;
-					ptr = ptrTo = ptrFrom + frameLen + 4;
-					// Search it to see if it has been existed
+	// Configure Netwrok Discovery backoff
+	memset(hex, 0, sizeof(hex));
+	scan_time = m_scantime * 10;
+	if (scan_time > 252) {
+		scan_time = 252;
+		m_scantime = 25;
+	}
+	else if (scan_time < 32) {
+		scan_time = 32;
+		m_scantime = 32;
+	}
+	scanTime[0] = (char)(scan_time >> 8);
+	scanTime[1] = (char)scan_time;
+	LocalXbeeMsg("NT", scanTime, 2);
+	// Send ATND command to do network discovery
+	// Header
+	msg[0] = 0x7E;
+	// Length
+	msg[1] = 0x00;
+	msg[2] = 0x04;
+	// Frame Type
+	msg[3] = 0x08;
+	// Frame ID
+	msg[4] = 0x01;
+	// AT Command
+	msg[5] = 'N';
+	msg[6] = 'D';
+	// Checksum
+	sum = 0;
+	for (i = 0; i < 0x04; i++) {
+		sum += msg[3 + i];
+	}
+	msg[7] = 0xFF - sum;
+	m_txLed.SetOnOff(TRUE);
+	m_serialport.Write(msg, 8);
+	Sleep(50);
+	m_txLed.SetOnOff(FALSE);
+	g_endScan = timer_cnt = 0;
+	memset(rbuffer, 0, sizeof(rbuffer));
+	ptr = rbuffer;
+	do {
+		m_rxLed.SetOnOff(TRUE);
+		if (m_serialport.Read(ptr, 1) == 1) {
+			if (*ptr == 0x7E) {
+				Sleep(5);
+				m_serialport.Read((ptr + 1), 2);
+				frameLen = (char)(ptr[1] >> 8) + (char)ptr[2];
+				Sleep(20);
+				m_serialport.Read((ptr + 3), frameLen + 1);
+				ptrFrom = ptr;
+				ptr = ptrTo = ptrFrom + frameLen + 4;
+				// Search it to see if it has been existed
+				pXbee = g_xbeeInfo;
+				already_exist = 0;
+				for (i = 0; i < MAX_NUM_OF_NODES; i++) {
+					if ((strncmp(pXbee->shAddr, (ptrFrom + 10), XBEE_SHADDR_LEN) == 0) &&
+						(strncmp(pXbee->slAddr, (ptrFrom + 14), XBEE_SLADDR_LEN) == 0)){
+						already_exist = 1;
+						break;
+					}
+					++pXbee;
+				}
+				// Store the info after finding remote xbee module
+				if (already_exist == 0) {
 					pXbee = g_xbeeInfo;
-					already_exist = 0;
 					for (i = 0; i < MAX_NUM_OF_NODES; i++) {
-						if ((strncmp(pXbee->shAddr, (ptrFrom + 10), XBEE_SHADDR_LEN) == 0) &&
-							(strncmp(pXbee->slAddr, (ptrFrom + 14), XBEE_SLADDR_LEN) == 0)){
-							already_exist = 1;
+						if ((pXbee->myAddr[0] == 0x00) && (pXbee->myAddr[1] == 0x00)) {
+							ptrFrom += 8;
+							// Copy My Address
+							memcpy(pXbee->myAddr, ptrFrom, XBEE_MYADDR_LEN);
+							ptrFrom += XBEE_MYADDR_LEN;
+							// Copy SH Address
+							memcpy(pXbee->shAddr, ptrFrom, XBEE_SHADDR_LEN);
+							ptrFrom += XBEE_SHADDR_LEN;
+							// Copy SL Address
+							memcpy(pXbee->slAddr, ptrFrom, XBEE_SLADDR_LEN);
+							ptrFrom += XBEE_SLADDR_LEN;
+							// Copy Network Identifier
+							ptrMove = ptrFrom;
+							do {
+								++ptrMove;
+							} while (*ptrMove != 0x00);
+							memcpy(pXbee->nIdenti, ptrFrom, (ptrMove - ptrFrom));
+							ptrFrom = ptrMove + 1;
+							// Parent network address
+							ptrFrom += 2;
+							// Device type
+							pXbee->devType = ptrFrom[0];
+							ptrFrom += 1;
+							// Ignore the rest, and update the tree structure
+							hItem = m_uan.GetRootItem();
+							str.Format(L"XBee %d: Stop", (m_xbeeNodeNum + 1));
+							hSubItem = m_uan.InsertItem(str, NULL, NULL, hItem);
+							m_uan.SetItemData(hSubItem, (m_xbeeNodeNum + 1));
+							addr = (((int)(pXbee->shAddr[0]) << 24) & 0xFF000000) + (((int)(pXbee->shAddr[1]) << 16) & 0x00FF0000) +
+									(((int)(pXbee->shAddr[2]) << 8) & 0x0000FF00) + ((int)(pXbee->shAddr[3]) & 0x000000FF);
+							str.Format(L"SH: %x", addr);
+							h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
+							m_uan.SetItemData(h2ndItem, 100);
+							addr = (((int)(pXbee->slAddr[0]) << 24) & 0xFF000000) + (((int)(pXbee->slAddr[1]) << 16) & 0x00FF0000) +
+								(((int)(pXbee->slAddr[2]) << 8) & 0x0000FF00) + ((int)(pXbee->slAddr[3]) & 0x000000FF);
+							str.Format(L"SL: %x", addr);
+							h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
+							m_uan.SetItemData(h2ndItem, 100);
+							memset(message, 0, sizeof(message));
+							AnsiToUnicode(message, pXbee->nIdenti);
+							str.Format(L"NI: %s", message);
+							h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
+							m_uan.SetItemData(h2ndItem, 100);
+							++m_xbeeNodeNum;
+							Invalidate();
+							m_uan.Expand(hItem, TVE_EXPAND);
 							break;
 						}
 						++pXbee;
 					}
-					// Store the info after finding remote xbee module
-					if (already_exist == 0) {
-						pXbee = g_xbeeInfo;
-						for (i = 0; i < MAX_NUM_OF_NODES; i++) {
-							if ((pXbee->myAddr[0] == 0x00) && (pXbee->myAddr[1] == 0x00)) {
-								ptrFrom += 8;
-								// Copy My Address
-								memcpy(pXbee->myAddr, ptrFrom, XBEE_MYADDR_LEN);
-								ptrFrom += XBEE_MYADDR_LEN;
-								// Copy SH Address
-								memcpy(pXbee->shAddr, ptrFrom, XBEE_SHADDR_LEN);
-								ptrFrom += XBEE_SHADDR_LEN;
-								// Copy SL Address
-								memcpy(pXbee->slAddr, ptrFrom, XBEE_SLADDR_LEN);
-								ptrFrom += XBEE_SLADDR_LEN;
-								// Copy Network Identifier
-								ptrMove = ptrFrom;
-								do {
-									++ptrMove;
-								} while (*ptrMove != 0x00);
-								memcpy(pXbee->nIdenti, ptrFrom, (ptrMove - ptrFrom));
-								ptrFrom = ptrMove + 1;
-								// Parent network address
-								ptrFrom += 2;
-								// Device type
-								pXbee->devType = ptrFrom[0];
-								ptrFrom += 1;
-								// Ignore the rest, and update the tree structure
-								hItem = m_uan.GetRootItem();
-								str.Format(L"XBee %d: Stop", (m_xbeeNodeNum + 1));
-								hSubItem = m_uan.InsertItem(str, NULL, NULL, hItem);
-								m_uan.SetItemData(hSubItem, (m_xbeeNodeNum + 1));
-								addr = (((int)(pXbee->shAddr[0]) << 24) & 0xFF000000) + (((int)(pXbee->shAddr[1]) << 16) & 0x00FF0000) +
-										(((int)(pXbee->shAddr[2]) << 8) & 0x0000FF00) + ((int)(pXbee->shAddr[3]) & 0x000000FF);
-								str.Format(L"SH: %x", addr);
-								h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
-								m_uan.SetItemData(h2ndItem, 100);
-								addr = (((int)(pXbee->slAddr[0]) << 24) & 0xFF000000) + (((int)(pXbee->slAddr[1]) << 16) & 0x00FF0000) +
-									(((int)(pXbee->slAddr[2]) << 8) & 0x0000FF00) + ((int)(pXbee->slAddr[3]) & 0x000000FF);
-								str.Format(L"SL: %x", addr);
-								h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
-								m_uan.SetItemData(h2ndItem, 100);
-								memset(message, 0, sizeof(message));
-								AnsiToUnicode(message, pXbee->nIdenti);
-								str.Format(L"NI: %s", message);
-								h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
-								m_uan.SetItemData(h2ndItem, 100);
-								++m_xbeeNodeNum;
-								Invalidate();
-								m_uan.Expand(hItem, TVE_EXPAND);
-								break;
-							}
-							++pXbee;
-						}
-					}
 				}
-			}
-			Sleep(100);
-			m_rxLed.SetOnOff(FALSE);
-			Sleep(100);
-		} while ((++timer_cnt < (scan_time / 2 + 5)) && (g_endScan == 0));
-
-		// Get RSSI value from each remote XBee module
-		pXbee = g_xbeeInfo;
-		hItem = m_uan.GetRootItem();
-		if (m_xbeeNodeNum > 0) {
-			hSubItem = m_uan.GetChildItem(hItem);
-			for (i = 0; i < MAX_NUM_OF_NODES; i++) {
-				if ((pXbee->myAddr[0] != 0x00) || (pXbee->myAddr[1] != 0x00)) {
-					if ((pXbee->rssi[0] == 0) && (pXbee->rssi[1] == 0)) {
-						RssiXbeeMsg(pXbee->shAddr, pXbee->slAddr, pXbee->rssi);
-						if (hSubItem != NULL) {
-							str.Format(L"RSSI(dBm): %d", pXbee->rssi[1]);
-							h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
-							m_uan.SetItemData(h2ndItem, 100);
-							hSubItem = m_uan.GetNextSiblingItem(hSubItem);
-						}
-					}
-				}
-				++pXbee;
 			}
 		}
-		m_uan.Expand(hItem, TVE_EXPAND);
+		Sleep(100);
+		m_rxLed.SetOnOff(FALSE);
+		Sleep(100);
+	} while ((++timer_cnt < (scan_time / 2 + 5)) && (g_endScan == 0));
+	// Get RSSI value from each remote XBee module
+	pXbee = g_xbeeInfo;
+	hItem = m_uan.GetRootItem();
+	if (m_xbeeNodeNum > 0) {
+		hSubItem = m_uan.GetChildItem(hItem);
+		for (i = 0; i < MAX_NUM_OF_NODES; i++) {
+			if ((pXbee->myAddr[0] != 0x00) || (pXbee->myAddr[1] != 0x00)) {
+				if ((pXbee->rssi[0] == 0) && (pXbee->rssi[1] == 0)) {
+					RssiXbeeMsg(pXbee->shAddr, pXbee->slAddr, pXbee->rssi);
+					if (hSubItem != NULL) {
+						str.Format(L"RSSI(dBm): %d", pXbee->rssi[1]);
+						h2ndItem = m_uan.InsertItem(str, NULL, NULL, hSubItem);
+						m_uan.SetItemData(h2ndItem, 100);
+						hSubItem = m_uan.GetNextSiblingItem(hSubItem);
+					}
+				}
+			}
+			++pXbee;
+		}
 	}
+	m_uan.Expand(hItem, TVE_EXPAND);
+
 
 	return 0;
 }
@@ -1033,6 +1037,7 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::ScanThread(LPVOID lpPara)
 
 	err = (DWORD)(p_class->ScanNetwork());
 	g_stThread = ST_THREAD_STOP;
+	p_class->m_stApp = ST_APP_NETWORKSCAN;
 
 	return err;
 }
@@ -1377,7 +1382,6 @@ BOOL CUnderwaterAcousticCommunicationDlg::OnInitDialog()
 	m_uan.ModifyStyle(NULL, TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_EDITLABELS | TVS_TRACKSELECT | TVS_SHOWSELALWAYS);
 
 	m_scantime = 13;
-	m_serialportFlag = 0;
 	m_runstopFlag = 0;
 	for (i = 0; i < MAX_NUM_OF_NODES; i++) {
 		memset(&g_xbeeInfo[i], 0, sizeof(struct XBeeInfo));
@@ -1454,7 +1458,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonConnect()
 	char c_buffer[8];
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
@@ -1469,15 +1473,14 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonConnect()
 	i_baudrate = atoi(c_buffer);
 	str_baudrate.ReleaseBuffer();
 
-	if (m_serialportFlag == 0) {
+	if (m_stApp == ST_APP_ZERO) {
 		try {
 			m_serialport.Open(ui_port, i_baudrate, CSerialPort::NoParity, 8, CSerialPort::OneStopBit, CSerialPort::NoFlowControl, NULL);
 			m_serialport.Set0Timeout();
 			m_serialport.Set0ReadTimeout();
 			m_serialport.Setup(1024, 1024);
 			m_connect.SetWindowTextW(_T("Disconnect"));
-			m_serialportFlag = 1;
-
+			m_stApp = ST_APP_CONNECTED;
 			OnBnClickedButtonReadinfo2();
 		}
 		catch (CSerialException* pEx) {
@@ -1494,7 +1497,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonConnect()
 		m_xbeeid = "";
 		m_xbeecm = "";
 		m_connect.SetWindowTextW(_T("Connect"));
-		m_serialportFlag = 0;
+		m_stApp = ST_APP_ZERO;
 		UpdateData(false);
 	}
 }
@@ -1527,11 +1530,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonReadinfo2()
 	CString str;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
-	if (m_serialportFlag == 1) {
+	if (m_stApp != ST_APP_ZERO) {
 		m_serialport.ClearWriteBuffer();
 		m_serialport.ClearReadBuffer();
 		memset(rbuffer, 0, sizeof(rbuffer));
@@ -1661,7 +1664,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonReadinfo2()
 		UpdateData(false);
 	}
 	else {
-		AfxMessageBox(L"Please Connect at first.......", MB_OK);
+		AfxMessageBox(L"Please Connect COM port at first.......", MB_OK);
 	}
 
 }
@@ -1678,12 +1681,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonWriteinfo()
 	char rbuffer[8];
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
 
-	if (m_serialportFlag == 1) {
+	if (m_stApp != ST_APP_ZERO) {
 		m_serialport.ClearWriteBuffer();
 		m_serialport.ClearReadBuffer();
 		memset(rbuffer, 0, sizeof(rbuffer));
@@ -1761,7 +1764,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonWriteinfo()
 		}
 	}
 	else {
-		AfxMessageBox(L"Please Connect at first.........", MB_OK);
+		AfxMessageBox(L"Please Connect COM port at first.........", MB_OK);
 	}
 }
 
@@ -1776,11 +1779,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonTimesync()
 
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
-	if (m_serialportFlag == 1) {
+	if ((m_stApp != ST_APP_ZERO) && (m_stApp != ST_APP_CONNECTED)) {
 		pXbee = g_xbeeInfo;
 		hItem = m_uan.GetRootItem();
 		hSubItem = m_uan.GetChildItem(hItem);
@@ -1831,6 +1834,9 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonTimesync()
 			hSubItem = m_uan.GetNextSiblingItem(hSubItem);
 		}
 	}
+	else {
+		AfxMessageBox(_T("Please connect COM port at first, and do network scan..."));
+	}
 }
 
 
@@ -1844,7 +1850,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonDownload()
 	CFileException ex;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
@@ -1878,13 +1884,13 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonScan()
 	struct ModemInfo* pModem;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
 	flag = 0;
 	pModem = g_modemInfo;
-	if (m_serialportFlag == 1) {
+	if (m_stApp != ST_APP_ZERO) {
 		// Check if some modem is in running state
 		for (i = 0; i < MAX_NUM_OF_NODES; i++) {
 			if (pModem->runstop == MODEM_RUN) {
@@ -1902,7 +1908,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonScan()
 		}
 	}
 	else {
-		AfxMessageBox(L"How many times do I tell you to connect at first?!", MB_OK);
+		AfxMessageBox(L"How many times do I tell you to connect COM port at first?!", MB_OK);
 	}
 }
 
@@ -1989,7 +1995,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonUpdateconfigure()
 
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		return;
+	}
+
+	if ((m_stApp == ST_APP_ZERO) || (m_stApp == ST_APP_CONNECTED)) {
+		AfxMessageBox(_T("Please connect COM port at first, and do network scan..."));
 		return;
 	}
 
@@ -2184,10 +2195,14 @@ void CUnderwaterAcousticCommunicationDlg::OnTimesychronizeRun()
 	CString str;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select one node for time sychronization command"));
+		return;
+	}
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	pMinfo = &g_modemInfo[g_xbeeOffset];
 	if (TimeSync(pXbee->shAddr, pXbee->slAddr) == 0) {
@@ -2236,107 +2251,20 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuRun()
 	CString str;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
-	if (m_serialportFlag == 1) {
-		flag = 0;
-		pXbee = &g_xbeeInfo[g_xbeeOffset];
-		pMinfo = &g_modemInfo[g_xbeeOffset];
-		if (pMinfo->runstop == MODEM_STOP) {
-			if (m_dlgPara.DoModal() == IDOK) {
-				memset(wbuffer, 0, sizeof(wbuffer));
-				wbuffer[0] = wbuffer[1] = (char)0xFF;
-				wbuffer[2] = wbuffer[3] = 0x00;
-				wbuffer[4] = 0x00;
-				wbuffer[5] = COMMON_CMD;
-				wbuffer[6] = 0x00;
-				wbuffer[7] = 16;
-				wbuffer[8] = (char)(RUNSTOP_CMD >> 8);
-				wbuffer[9] = (char)RUNSTOP_CMD;
-				wbuffer[10] = wbuffer[11] = 0x00;
-				// Run or Stop
-				wbuffer[12] = MODEMRUN_CMD;
-				// MAC Protocol
-				wbuffer[13] = m_dlgPara.m_macSelect + 1;
-				// XID
-				wbuffer[14] = (char)m_dlgPara.m_xid;
-				// Master Address
-				wbuffer[15] = (char)m_dlgPara.m_masteraddr;
-				// Packet rate
-				pktRate = (int)(m_dlgPara.m_packetrate * 10000);
-				wbuffer[16] = (char)(pktRate >> 24);
-				wbuffer[17] = (char)(pktRate >> 16);
-				wbuffer[18] = (char)(pktRate >> 8);
-				wbuffer[19] = (char)pktRate;
-				// Reserved
-				wbuffer[20] = wbuffer[21] = 0x00;
-				wbuffer[22] = wbuffer[23] = 0x00;
-				// CRC
-				crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 16);
-				wbuffer[24] = (char)(crc >> 24);
-				wbuffer[25] = (char)(crc >> 16);
-				wbuffer[26] = (char)(crc >> 8);
-				wbuffer[27] = (char)crc;
-
-				memcpy(addr, pXbee->shAddr, 4);
-				memcpy((addr + 4), pXbee->slAddr, 4);
-				// Here we send Tx request frame and get Rx indicator frame in API mode
-				TxXbeeMsg(wbuffer, 28, addr, rbuffer);
-			}
-			else {
-				flag = 1;
-			}
-			if (flag == 0) {
-				if (CheckACK(rbuffer, RUNSTOP_CMD) == 0) {
-					AfxMessageBox(L"The MAC protocol is running.");
-					pMinfo->runstop = MODEM_RUN;
-					hItem = m_uan.GetRootItem();
-					hSubItem = m_uan.GetChildItem(hItem);
-					for (i = 0; i < g_xbeeOffset; i++) {
-						hSubItem = m_uan.GetNextSiblingItem(hSubItem);
-					}
-					str = m_uan.GetItemText(hSubItem);
-					str = str.Left(str.GetLength() - 4);
-					str = str + L"Running";
-					m_uan.SetItemText(hSubItem, str);
-					//m_uan.SetItemState(hSubItem, TVIS_BOLD, TVIS_BOLD);
-				}
-				else {
-					AfxMessageBox(L"The MAC protocol may not run due to some errors.");
-				}
-			}
-		}
-		else {
-			MessageBox(L"The Modem has been in RUN state.");
-		}
-	}
-	else {
-		AfxMessageBox(L"Come on... Please connect at first.....");
-	}
-}
-
-
-void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
-{
-	// TODO: Add your command handler code here
-	struct XBeeInfo* pXbee;
-	struct ModemInfo* pMinfo;
-	char wbuffer[32], rbuffer[32], addr[8];
-	HTREEITEM hItem, hSubItem;
-	int i, crc, pktRate;
-	CString str;
-
-	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select one node for run command"));
 		return;
 	}
 
-	if (m_serialportFlag == 1) {
-		pXbee = &g_xbeeInfo[g_xbeeOffset];
-		pMinfo = &g_modemInfo[g_xbeeOffset];
-		if (pMinfo->runstop == MODEM_RUN) {
+	flag = 0;
+	pXbee = &g_xbeeInfo[g_xbeeOffset];
+	pMinfo = &g_modemInfo[g_xbeeOffset];
+	if (pMinfo->runstop == MODEM_STOP) {
+		if (m_dlgPara.DoModal() == IDOK) {
 			memset(wbuffer, 0, sizeof(wbuffer));
 			wbuffer[0] = wbuffer[1] = (char)0xFF;
 			wbuffer[2] = wbuffer[3] = 0x00;
@@ -2348,7 +2276,7 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
 			wbuffer[9] = (char)RUNSTOP_CMD;
 			wbuffer[10] = wbuffer[11] = 0x00;
 			// Run or Stop
-			wbuffer[12] = MODEMSTOP_CMD;
+			wbuffer[12] = MODEMRUN_CMD;
 			// MAC Protocol
 			wbuffer[13] = m_dlgPara.m_macSelect + 1;
 			// XID
@@ -2370,34 +2298,119 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
 			wbuffer[25] = (char)(crc >> 16);
 			wbuffer[26] = (char)(crc >> 8);
 			wbuffer[27] = (char)crc;
-
 			memcpy(addr, pXbee->shAddr, 4);
 			memcpy((addr + 4), pXbee->slAddr, 4);
 			// Here we send Tx request frame and get Rx indicator frame in API mode
 			TxXbeeMsg(wbuffer, 28, addr, rbuffer);
+		}
+		else {
+			flag = 1;
+		}
+		if (flag == 0) {
 			if (CheckACK(rbuffer, RUNSTOP_CMD) == 0) {
-				AfxMessageBox(L"The MAC protocol is stopped.");
-				pMinfo->runstop = MODEM_STOP;
+				AfxMessageBox(L"The MAC protocol is running.");
+				pMinfo->runstop = MODEM_RUN;
 				hItem = m_uan.GetRootItem();
 				hSubItem = m_uan.GetChildItem(hItem);
 				for (i = 0; i < g_xbeeOffset; i++) {
 					hSubItem = m_uan.GetNextSiblingItem(hSubItem);
 				}
 				str = m_uan.GetItemText(hSubItem);
-				str = str.Left(str.GetLength() - 7);
-				str = str + L"Stop";
+				str = str.Left(str.GetLength() - 4);
+				str = str + L"Running";
 				m_uan.SetItemText(hSubItem, str);
+				//m_uan.SetItemState(hSubItem, TVIS_BOLD, TVIS_BOLD);
 			}
 			else {
-				AfxMessageBox(L"The MAC protocol may not stop due to some errors.");
+				AfxMessageBox(L"The MAC protocol may not run due to some errors.");
 			}
-		}
-		else {
-			MessageBox(L"The Modem has been in STOP state.");
 		}
 	}
 	else {
-		AfxMessageBox(L"Come on... Please connect at first.....");
+		MessageBox(L"The Modem has been in RUN state.");
+	}
+}
+
+
+void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
+{
+	// TODO: Add your command handler code here
+	struct XBeeInfo* pXbee;
+	struct ModemInfo* pMinfo;
+	char wbuffer[32], rbuffer[32], addr[8];
+	HTREEITEM hItem, hSubItem;
+	int i, crc, pktRate;
+	CString str;
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		return;
+	}
+
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select one node for stop command"));
+		return;
+	}
+
+	pXbee = &g_xbeeInfo[g_xbeeOffset];
+	pMinfo = &g_modemInfo[g_xbeeOffset];
+	if (pMinfo->runstop == MODEM_RUN) {
+		memset(wbuffer, 0, sizeof(wbuffer));
+		wbuffer[0] = wbuffer[1] = (char)0xFF;
+		wbuffer[2] = wbuffer[3] = 0x00;
+		wbuffer[4] = 0x00;
+		wbuffer[5] = COMMON_CMD;
+		wbuffer[6] = 0x00;
+		wbuffer[7] = 16;
+		wbuffer[8] = (char)(RUNSTOP_CMD >> 8);
+		wbuffer[9] = (char)RUNSTOP_CMD;
+		wbuffer[10] = wbuffer[11] = 0x00;
+		// Run or Stop
+		wbuffer[12] = MODEMSTOP_CMD;
+		// MAC Protocol
+		wbuffer[13] = m_dlgPara.m_macSelect + 1;
+		// XID
+		wbuffer[14] = (char)m_dlgPara.m_xid;
+		// Master Address
+		wbuffer[15] = (char)m_dlgPara.m_masteraddr;
+		// Packet rate
+		pktRate = (int)(m_dlgPara.m_packetrate * 10000);
+		wbuffer[16] = (char)(pktRate >> 24);
+		wbuffer[17] = (char)(pktRate >> 16);
+		wbuffer[18] = (char)(pktRate >> 8);
+		wbuffer[19] = (char)pktRate;
+		// Reserved
+		wbuffer[20] = wbuffer[21] = 0x00;
+		wbuffer[22] = wbuffer[23] = 0x00;
+		// CRC
+		crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 16);
+		wbuffer[24] = (char)(crc >> 24);
+		wbuffer[25] = (char)(crc >> 16);
+		wbuffer[26] = (char)(crc >> 8);
+		wbuffer[27] = (char)crc;
+		memcpy(addr, pXbee->shAddr, 4);
+		memcpy((addr + 4), pXbee->slAddr, 4);
+		// Here we send Tx request frame and get Rx indicator frame in API mode
+		TxXbeeMsg(wbuffer, 28, addr, rbuffer);
+		if (CheckACK(rbuffer, RUNSTOP_CMD) == 0) {
+			AfxMessageBox(L"The MAC protocol is stopped.");
+			pMinfo->runstop = MODEM_STOP;
+			hItem = m_uan.GetRootItem();
+			hSubItem = m_uan.GetChildItem(hItem);
+			for (i = 0; i < g_xbeeOffset; i++) {
+				hSubItem = m_uan.GetNextSiblingItem(hSubItem);
+			}
+			str = m_uan.GetItemText(hSubItem);
+			str = str.Left(str.GetLength() - 7);
+			str = str + L"Stop";
+			m_uan.SetItemText(hSubItem, str);
+		}
+		else {
+			AfxMessageBox(L"The MAC protocol may not stop due to some errors.");
+		}
+	}
+	else {
+		MessageBox(L"The Modem has been in STOP state.");
 	}
 }
 
@@ -2413,7 +2426,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 	HTREEITEM hItem, hSubItem;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
 		return;
 	}
 
@@ -2520,7 +2533,18 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckLight()
 	struct XBeeInfo* pXbee;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		if (m_checkLight.GetCheck() == FALSE) {
+			m_checkLight.SetCheck(TRUE);
+		}
+		else {
+			m_checkLight.SetCheck(FALSE);
+		}
+		return;
+	}
+
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select the node..."));
 		if (m_checkLight.GetCheck() == FALSE) {
 			m_checkLight.SetCheck(TRUE);
 		}
@@ -2557,7 +2581,18 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckSelects()
 	struct XBeeInfo* pXbee;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		if (m_checkSelects.GetCheck() == FALSE) {
+			m_checkSelects.SetCheck(TRUE);
+		}
+		else {
+			m_checkSelects.SetCheck(FALSE);
+		}
+		return;
+	}
+
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select the node..."));
 		if (m_checkSelects.GetCheck() == FALSE) {
 			m_checkSelects.SetCheck(TRUE);
 		}
@@ -2594,7 +2629,18 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckBeaglebone()
 	struct XBeeInfo* pXbee;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		if (m_checkBBB.GetCheck() == FALSE) {
+			m_checkBBB.SetCheck(TRUE);
+		}
+		else {
+			m_checkBBB.SetCheck(FALSE);
+		}
+		return;
+	}
+
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select the node..."));
 		if (m_checkBBB.GetCheck() == FALSE) {
 			m_checkBBB.SetCheck(TRUE);
 		}
@@ -2631,7 +2677,18 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckReserved()
 	struct XBeeInfo* pXbee;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		if (m_checkReserved.GetCheck() == FALSE) {
+			m_checkReserved.SetCheck(TRUE);
+		}
+		else {
+			m_checkReserved.SetCheck(FALSE);
+		}
+		return;
+	}
+
+	if ((g_xbeeOffset < 0) || (g_xbeeOffset > MAX_NUM_OF_NODES)) {
+		AfxMessageBox(_T("Please select the node..."));
 		if (m_checkReserved.GetCheck() == FALSE) {
 			m_checkReserved.SetCheck(TRUE);
 		}
@@ -2665,7 +2722,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotewakeup()
 {
 	// TODO: Add your control notification handler code here
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		return;
+	}
+
+	if (m_stApp == ST_APP_ZERO) {
+		AfxMessageBox(_T("Please connect COM port at first......"), MB_OK);
 		return;
 	}
 
@@ -2683,7 +2745,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotsleep()
 	char para;
 
 	if (g_stThread != ST_THREAD_STOP) {
-		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
+		return;
+	}
+
+	if (m_stApp == ST_APP_ZERO) {
+		AfxMessageBox(_T("Please connect COM port at first........."), MB_OK);
 		return;
 	}
 

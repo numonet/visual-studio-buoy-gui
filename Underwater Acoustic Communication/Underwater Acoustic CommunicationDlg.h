@@ -66,11 +66,11 @@ public:
 	CDialogPara m_dlgPara;
 
 	int m_xbeeNodeNum;
-	int m_serialportFlag;
 	int m_runstopFlag;
 	int m_downloadType;
 	int m_downloadFilelen;
 	int m_scantime;
+	int m_stApp;
 	unsigned char* m_downloadpBuffer;
 
 	CString m_xbeedh;
@@ -79,6 +79,7 @@ public:
 	CString m_xbeecm;
 	CString m_xbeesh;
 	CString m_xbeesl;
+	CButton m_connect;
 	CButton m_checkLight;
 	CButton m_checkSelects;
 	CButton m_checkBBB;
@@ -89,13 +90,12 @@ public:
 	CComboBox m_rfPower;
 	CComboBox m_dlType;
 	CComboBox m_ulType;
-	CProgressCtrl m_progress;
-	CListCtrl m_List;
-	CButton m_connect;
-	CEdit m_filepath;
 	CDynamicLED m_txLed;
 	CDynamicLED m_rxLed;
+	CListCtrl m_List;
+	CEdit m_filepath;
 	CTreeCtrl m_uan;
+	CProgressCtrl m_progress;
 
 	afx_msg void OnBnClickedButtonConnect();
 	afx_msg void OnCbnSelchangeComboXbeemode();
@@ -104,25 +104,25 @@ public:
 	afx_msg void OnBnClickedButtonTimesync();
 	afx_msg void OnBnClickedButtonDownload();
 	afx_msg void OnBnClickedButtonScan();
-	afx_msg void OnBeginlabeleditTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
-	afx_msg void OnEndlabeleditTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
-	afx_msg void OnBnClickedButtonUpdateconfigure();
-	afx_msg void OnTvnSelchangedTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
-	afx_msg void OnRclickTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
-
-	virtual void OnOK();
-	virtual void OnCancel();
-	afx_msg void OnTimesychronizeRun();
-	afx_msg void OnMenuRun();
-	afx_msg void OnMenuStop();
 	afx_msg void OnBnClickedMonitorstart();
 	afx_msg void OnBnClickedButtonStopscan();
-	afx_msg void OnNMCustomdrawTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnBnClickedMonitorstop();
+	afx_msg void OnBnClickedButtonRemotewakeup();
+	afx_msg void OnBnClickedButtonRemotsleep();
+	afx_msg void OnBnClickedButtonUpdateconfigure();
+	afx_msg void OnBeginlabeleditTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnEndlabeleditTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnNMCustomdrawTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnTvnSelchangedTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnRclickTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnTimesychronizeRun();
 	afx_msg void OnClickedCheckLight();
 	afx_msg void OnClickedCheckSelects();
 	afx_msg void OnClickedCheckBeaglebone();
 	afx_msg void OnClickedCheckReserved();
-	afx_msg void OnBnClickedButtonRemotewakeup();
-	afx_msg void OnBnClickedButtonRemotsleep();
+	afx_msg void OnMenuRun();
+	afx_msg void OnMenuStop();
+
+	virtual void OnOK();
+	virtual void OnCancel();
 };
