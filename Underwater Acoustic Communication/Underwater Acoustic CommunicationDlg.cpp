@@ -77,7 +77,16 @@
 #define TREE_MODEMADDR_CODE			101
 #define TREE_TIMESYNC_CODE			102
 
+// State Machine for thread running....
+#define ST_THREAD_STOP				0
+#define ST_THREAD_DOWNLOAD			1
+#define ST_THREAD_SCAN				2
+#define ST_THREAD_MONITOR			3
+#define ST_THREAD_WAKEUP			4
 
+
+
+// XBee info from each Node
 struct XBeeInfo {
 	char myAddr[2];
 	char shAddr[4];
@@ -89,6 +98,7 @@ struct XBeeInfo {
 	char rssi[2];
 };
 
+// Node info from BeagleBone Black
 struct ModemInfo {
 	char addr;
 	char timeSync;
@@ -96,6 +106,7 @@ struct ModemInfo {
 	char listOffset;
 };
 
+// Monitor data format from each node
 struct MonitorInfo {
 	char addr;
 	char reserved_1;
@@ -104,6 +115,7 @@ struct MonitorInfo {
 	char data[96];
 };
 
+// Power control info from XBee for each node
 struct PowerInfo {
 	char light;
 	char selects;
@@ -118,6 +130,9 @@ static struct PowerInfo g_powerInfo[MAX_NUM_OF_NODES];
 static int g_xbeeOffset;
 static int g_endScan;
 static int g_endMonitor;
+static int g_stThread;
+
+CRITICAL_SECTION g_csThread;
 
 // CAboutDlg dialog used for App About
 
@@ -168,6 +183,7 @@ CUnderwaterAcousticCommunicationDlg::CUnderwaterAcousticCommunicationDlg(CWnd* p
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 
 	g_xbeeOffset = 0;
+	g_stThread = ST_THREAD_STOP;
 }
 
 void CUnderwaterAcousticCommunicationDlg::DoDataExchange(CDataExchange* pDX)
@@ -226,6 +242,8 @@ BEGIN_MESSAGE_MAP(CUnderwaterAcousticCommunicationDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_Selects, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckSelects)
 	ON_BN_CLICKED(IDC_CHECK_BEAGLEBONE, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckBeaglebone)
 	ON_BN_CLICKED(IDC_CHECK_RESERVED, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckReserved)
+	ON_BN_CLICKED(IDC_BUTTON_REMOTEWAKEUP, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotewakeup)
+	ON_BN_CLICKED(IDC_BUTTON_REMOTSLEEP, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotsleep)
 END_MESSAGE_MAP()
 
 
@@ -829,7 +847,7 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::DownloadThread(LPVOID lpPara)
 	else {
 		p_class->MessageBox(L"Download File OK!", MB_OK);
 	}
-
+	g_stThread = ST_THREAD_STOP;
 
 	return 0;
 }
@@ -1014,6 +1032,136 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::ScanThread(LPVOID lpPara)
 	CUnderwaterAcousticCommunicationDlg* p_class = static_cast<CUnderwaterAcousticCommunicationDlg*>(lpPara);
 
 	err = (DWORD)(p_class->ScanNetwork());
+	g_stThread = ST_THREAD_STOP;
+
+	return err;
+}
+
+
+int CUnderwaterAcousticCommunicationDlg::WakeupXbee(void)
+{
+	int err, length, i, val_h, val_l, temp, num, count;
+	WCHAR wch[64];
+	char message[64], dAddr[8], msg[64];
+	char rbuffer[32], sum;
+
+	err = val_h = val_l = 0;
+	length = m_xbeedh.GetLength();
+	wcscpy_s(wch, CT2CW(m_xbeedh));
+	UnicodeToAnsi(wch, message);
+	length = m_xbeedh.GetLength();
+	for (i = 0; i < length; i++) {
+		if ((message[i] >= 0x30) && (message[i] <= 0x39)) {
+			temp = (int)(message[i] - 48);
+		}
+		else if ((message[i] >= 0x41) && (message[i] <= 0x46)) {
+			temp = (int)(message[i] - 55);
+		}
+		else if ((message[i] >= 0x61) && (message[i] <= 0x66)) {
+			temp = (int)(message[i] - 87);
+		}
+		else {
+			err = 1;
+			break;
+		}
+		val_h += (temp << (4 * (length - i - 1)));
+	}
+	length = m_xbeedl.GetLength();
+	wcscpy_s(wch, CT2CW(m_xbeedl));
+	UnicodeToAnsi(wch, message);
+	for (i = 0; i < length; i++) {
+		if ((message[i] >= 0x30) && (message[i] <= 0x39)) {
+			temp = (int)(message[i] - 48);
+		}
+		else if ((message[i] >= 0x41) && (message[i] <= 0x46)) {
+			temp = (int)(message[i] - 55);
+		}
+		else if ((message[i] >= 0x61) && (message[i] <= 0x66)) {
+			temp = (int)(message[i] - 87);
+		}
+		else {
+			err = 1;
+			break;
+		}
+		val_l += (temp << (4 * (length - i - 1)));
+	}
+	if (err == 0) {
+		for (i = 0; i < 4; i++) {
+			dAddr[i] = val_h >> ((4 - i - 1) * 8);
+			dAddr[4 + i] = val_l >> ((4 - i - 1) * 8);
+		}
+
+		err = 1;
+		memset(msg, 0, sizeof(msg));
+		// Header
+		msg[0] = 0x7E;
+		// Length
+		msg[1] = 0x00;
+		msg[2] = 0x0F + 1;
+		// Frame Type
+		msg[3] = 0x17;
+		// Frame ID
+		msg[4] = 0x01;
+		// Destination Address
+		memcpy((msg + 5), dAddr, 8);
+		// Reserved
+		msg[13] = (char)0xFF;
+		msg[14] = (char)0xFE;
+		// Remote Command Option
+		msg[15] = 0x02;
+		// AT Command
+		msg[16] = 'S';
+		msg[17] = 'M';
+		// Command Parameter
+		msg[18] = 0x0;
+		// Checksum
+		sum = 0;
+		for (i = 0; i < (0x0F + 1); i++) {
+			sum += msg[3 + i];
+		}
+		msg[18 + 1] = 0xFF - sum;
+		// Send data...
+		m_txLed.SetOnOff(TRUE);
+		m_serialport.Write(msg, (0x0F + 1 + 4));
+		Sleep(50);
+		m_txLed.SetOnOff(FALSE);
+		memset(rbuffer, 0, sizeof(rbuffer));
+		m_rxLed.SetOnOff(TRUE);
+		count = 0;
+		do {
+			num = m_serialport.Read(rbuffer, 1);
+			m_rxLed.SetOnOff(TRUE);
+			Sleep(250);
+			m_rxLed.SetOnOff(FALSE);
+			Sleep(250);
+		} while ((num == 0) && (++count < 120));
+		Sleep(50);
+		num += m_serialport.Read(rbuffer + 1, 18);
+		if ((num == 19) && (rbuffer[17] == 0x00)) {
+			err = 0;
+		}
+		m_rxLed.SetOnOff(FALSE);
+
+	}
+	
+
+	return err;
+}
+
+
+DWORD WINAPI CUnderwaterAcousticCommunicationDlg::WakeupThread(LPVOID lpPara)
+{
+	DWORD err;
+	CUnderwaterAcousticCommunicationDlg* p_class = static_cast<CUnderwaterAcousticCommunicationDlg*>(lpPara);
+
+	err = (DWORD)(p_class->WakeupXbee());
+	if (err == 0) {
+		AfxMessageBox(_T("The remote XBee module has been waken up."));
+	}
+	else {
+		AfxMessageBox(_T("The remote XBee module wake up timeout, please check the destination address"));
+	}
+	g_stThread = ST_THREAD_STOP;
 
 	return err;
 }
@@ -1106,6 +1254,7 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::MonitorThread(LPVOID lpPara)
 		}
 		Sleep(1000);
 	} while (g_endMonitor == MONITOR_RUN);
+	g_stThread = ST_THREAD_STOP;
 
 	return 0;
 }
@@ -1143,6 +1292,8 @@ BOOL CUnderwaterAcousticCommunicationDlg::OnInitDialog()
 
 	// TODO: Add extra initialization here
 	int i;
+
+	InitializeCriticalSection(&g_csThread);
 
 	m_comport.AddString(_T("COM1"));
 	m_comport.AddString(_T("COM2"));
@@ -1302,6 +1453,10 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonConnect()
 	wchar_t wc_buffer[8];
 	char c_buffer[8];
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
 
 	ui_port = (unsigned int)(m_comport.GetCurSel() + 1);
 	i_len = m_baudrate.GetLBTextLen(m_baudrate.GetCurSel());
@@ -1370,6 +1525,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonReadinfo2()
 	WCHAR message[24];
 	DWORD count, i;
 	CString str;
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
 
 	if (m_serialportFlag == 1) {
 		m_serialport.ClearWriteBuffer();
@@ -1517,6 +1677,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonWriteinfo()
 	char at_atcn[] = "ATCN\r";
 	char rbuffer[8];
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 
 	if (m_serialportFlag == 1) {
 		m_serialport.ClearWriteBuffer();
@@ -1609,6 +1774,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonTimesync()
 	struct XBeeInfo* pXbee;
 	CString str;
 
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	if (m_serialportFlag == 1) {
 		pXbee = g_xbeeInfo;
 		hItem = m_uan.GetRootItem();
@@ -1672,6 +1843,10 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonDownload()
 	CFile uFile;
 	CFileException ex;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
 
 	if (dlg.DoModal() == IDOK) {
 		filepath = dlg.GetFolderPath();
@@ -1688,6 +1863,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonDownload()
 				uFile.Read(m_downloadpBuffer, m_downloadFilelen);
 				uFile.Close();
 				// Create Download thread...
+				g_stThread = ST_THREAD_DOWNLOAD;
 				CreateThread(NULL, 0, DownloadThread, this, 0, NULL);
 			}
 		}
@@ -1701,6 +1877,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonScan()
 	int i, flag;
 	struct ModemInfo* pModem;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	flag = 0;
 	pModem = g_modemInfo;
 	if (m_serialportFlag == 1) {
@@ -1713,6 +1894,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonScan()
 		}
 		if (flag == 0) {
 			UpdateData(TRUE);
+			g_stThread = ST_THREAD_SCAN;
 			CreateThread(NULL, 0, ScanThread, this, 0, NULL);
 		}
 		else {
@@ -1806,6 +1988,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonUpdateconfigure()
 	CString str;
 
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	pXbee = g_xbeeInfo;
 	pModem = g_modemInfo;
 	accum_status = 0;
@@ -1887,6 +2074,10 @@ void CUnderwaterAcousticCommunicationDlg::OnTvnSelchangedTreeUan(NMHDR *pNMHDR, 
 	HTREEITEM hItem, hSubItem;
 	int addr, err, offset;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		return;
+	}
+
 	offset = 0;
 	pXbee = g_xbeeInfo;
 	hItem = m_uan.GetRootItem();
@@ -1906,6 +2097,31 @@ void CUnderwaterAcousticCommunicationDlg::OnTvnSelchangedTreeUan(NMHDR *pNMHDR, 
 				AfxMessageBox(L"Update DH and DL address for local Address error.");
 			}
 			g_xbeeOffset = offset;
+			// Update power info in UI
+			if (g_powerInfo[g_xbeeOffset].light == POWER_DOWN) {
+				m_checkLight.SetCheck(FALSE);
+			}
+			else {
+				m_checkLight.SetCheck(TRUE);
+			}
+			if (g_powerInfo[g_xbeeOffset].bbb == POWER_DOWN) {
+				m_checkBBB.SetCheck(FALSE);
+			}
+			else {
+				m_checkBBB.SetCheck(TRUE);
+			}
+			if (g_powerInfo[g_xbeeOffset].selects == POWER_DOWN) {
+				m_checkSelects.SetCheck(FALSE);
+			}
+			else {
+				m_checkSelects.SetCheck(TRUE);
+			}
+			if (g_powerInfo[g_xbeeOffset].reserved == POWER_DOWN) {
+				m_checkReserved.SetCheck(FALSE);
+			}
+			else {
+				m_checkReserved.SetCheck(TRUE);
+			}
 			break;
 		}
 		hSubItem = m_uan.GetNextSiblingItem(hSubItem);
@@ -1967,6 +2183,11 @@ void CUnderwaterAcousticCommunicationDlg::OnTimesychronizeRun()
 	HTREEITEM hItem, hSubItem, h2ndItem, hPrevItem;
 	CString str;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	pMinfo = &g_modemInfo[g_xbeeOffset];
 	if (TimeSync(pXbee->shAddr, pXbee->slAddr) == 0) {
@@ -2013,6 +2234,11 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuRun()
 	int i, flag, crc, pktRate;
 	HTREEITEM hItem, hSubItem;
 	CString str;
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
 
 	if (m_serialportFlag == 1) {
 		flag = 0;
@@ -2102,6 +2328,11 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
 	int i, crc, pktRate;
 	CString str;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	if (m_serialportFlag == 1) {
 		pXbee = &g_xbeeInfo[g_xbeeOffset];
 		pMinfo = &g_modemInfo[g_xbeeOffset];
@@ -2181,6 +2412,11 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 	struct ModemInfo* pMinfo;
 	HTREEITEM hItem, hSubItem;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
 	i = rowCnt = 0;
 	pXbee = g_xbeeInfo;
 	pMinfo = g_modemInfo;
@@ -2254,6 +2490,7 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 
 	if (rowCnt > 0) {
 		// Start thread for monitoring
+		g_stThread = ST_THREAD_MONITOR;
 		CreateThread(NULL, 0, MonitorThread, this, 0, NULL);
 	}
 	else {
@@ -2266,10 +2503,12 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstop()
 {
 	// TODO: Add your control notification handler code here
-	g_endMonitor = MONITOR_STOP;
-	// A little delay needed for the termination of monitor thread
-	Sleep(200);
-	MessageBox(L"Monitor stopped....");
+	if (g_stThread == ST_THREAD_MONITOR) {
+		g_endMonitor = MONITOR_STOP;
+		// A little delay needed for the termination of monitor thread
+		Sleep(200);
+		MessageBox(L"Monitor stopped....");
+	}
 }
 
 
@@ -2280,6 +2519,17 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckLight()
 	char para, dAddr[8];
 	struct XBeeInfo* pXbee;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		if (m_checkLight.GetCheck() == FALSE) {
+			m_checkLight.SetCheck(TRUE);
+		}
+		else {
+			m_checkLight.SetCheck(FALSE);
+		}
+		return;
+	}
+
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	if (m_checkLight.GetCheck()) {
 		para = POWER_UP;
@@ -2287,12 +2537,14 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckLight()
 	else {
 		para = POWER_DOWN;
 	}
-
 	memcpy(dAddr, pXbee->shAddr, XBEE_SHADDR_LEN);
 	memcpy((dAddr + XBEE_SHADDR_LEN), pXbee->slAddr, XBEE_SLADDR_LEN);
 	err = RemoteXbeeMsg(dAddr, PWRLIGHT_CMD, &para, 1);
 	if (err != 0) {
 		AfxMessageBox(_T("Control power of light error."));
+	}
+	else {
+		g_powerInfo[g_xbeeOffset].light = para;
 	}
 }
 
@@ -2304,6 +2556,17 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckSelects()
 	char para, dAddr[8];
 	struct XBeeInfo* pXbee;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		if (m_checkSelects.GetCheck() == FALSE) {
+			m_checkSelects.SetCheck(TRUE);
+		}
+		else {
+			m_checkSelects.SetCheck(FALSE);
+		}
+		return;
+	}
+
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	if (m_checkSelects.GetCheck()) {
 		para = POWER_UP;
@@ -2311,12 +2574,14 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckSelects()
 	else {
 		para = POWER_DOWN;
 	}
-
 	memcpy(dAddr, pXbee->shAddr, XBEE_SHADDR_LEN);
 	memcpy((dAddr + XBEE_SHADDR_LEN), pXbee->slAddr, XBEE_SLADDR_LEN);
 	err = RemoteXbeeMsg(dAddr, PWRSELECTS_CMD, &para, 1);
 	if (err != 0) {
-		AfxMessageBox(_T("Control power of light error."));
+		AfxMessageBox(_T("Control power of selects error."));
+	}
+	else {
+		g_powerInfo[g_xbeeOffset].selects = para;
 	}
 }
 
@@ -2328,6 +2593,17 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckBeaglebone()
 	char para, dAddr[8];
 	struct XBeeInfo* pXbee;
 
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		if (m_checkBBB.GetCheck() == FALSE) {
+			m_checkBBB.SetCheck(TRUE);
+		}
+		else {
+			m_checkBBB.SetCheck(FALSE);
+		}
+		return;
+	}
+
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	if (m_checkBBB.GetCheck()) {
 		para = POWER_UP;
@@ -2335,12 +2611,14 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckBeaglebone()
 	else {
 		para = POWER_DOWN;
 	}
-
 	memcpy(dAddr, pXbee->shAddr, XBEE_SHADDR_LEN);
 	memcpy((dAddr + XBEE_SHADDR_LEN), pXbee->slAddr, XBEE_SLADDR_LEN);
 	err = RemoteXbeeMsg(dAddr, PWRBBB_CMD, &para, 1);
 	if (err != 0) {
-		AfxMessageBox(_T("Control power of light error."));
+		AfxMessageBox(_T("Control power of BeagleBone error."));
+	}
+	else {
+		g_powerInfo[g_xbeeOffset].bbb = para;
 	}
 }
 
@@ -2351,6 +2629,17 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckReserved()
 	int err;
 	char para, dAddr[8];
 	struct XBeeInfo* pXbee;
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		if (m_checkReserved.GetCheck() == FALSE) {
+			m_checkReserved.SetCheck(TRUE);
+		}
+		else {
+			m_checkReserved.SetCheck(FALSE);
+		}
+		return;
+	}
 
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	if (m_checkReserved.GetCheck()) {
@@ -2364,6 +2653,93 @@ void CUnderwaterAcousticCommunicationDlg::OnClickedCheckReserved()
 	memcpy((dAddr + XBEE_SHADDR_LEN), pXbee->slAddr, XBEE_SLADDR_LEN);
 	err = RemoteXbeeMsg(dAddr, PWRRESERVED_CMD, &para, 1);
 	if (err != 0) {
-		AfxMessageBox(_T("Control power of light error."));
+		AfxMessageBox(_T("Control power of reserved error."));
+	}
+	else {
+		g_powerInfo[g_xbeeOffset].reserved = para;
+	}
+}
+
+
+void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotewakeup()
+{
+	// TODO: Add your control notification handler code here
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
+	g_stThread = ST_THREAD_WAKEUP;
+	CreateThread(NULL, 0, WakeupThread, this, 0, NULL);
+}
+
+
+void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotsleep()
+{
+	// TODO: Add your control notification handler code here
+	int err, length, i, val_h, val_l, temp;
+	WCHAR wch[64];
+	char message[64], dAddr[8];
+	char para;
+
+	if (g_stThread != ST_THREAD_STOP) {
+		AfxMessageBox(_T("One thread is running, please wait for completion"));
+		return;
+	}
+
+	err = val_h = val_l = 0;
+	length = m_xbeedh.GetLength();
+	wcscpy_s(wch, CT2CW(m_xbeedh));
+	UnicodeToAnsi(wch, message);
+	length = m_xbeedh.GetLength();
+	for (i = 0; i < length; i++) {
+		if ((message[i] >= 0x30) && (message[i] <= 0x39)) {
+			temp = (int)(message[i] - 48);
+		}
+		else if ((message[i] >= 0x41) && (message[i] <= 0x46)) {
+			temp = (int)(message[i] - 55);
+		}
+		else if ((message[i] >= 0x61) && (message[i] <= 0x66)) {
+			temp = (int)(message[i] - 87);
+		}
+		else {
+			err = 1;
+			break;
+		}
+		val_h += (temp << (4 * (length - i - 1)));
+	}
+	length = m_xbeedl.GetLength();
+	wcscpy_s(wch, CT2CW(m_xbeedl));
+	UnicodeToAnsi(wch, message);
+	for (i = 0; i < length; i++) {
+		if ((message[i] >= 0x30) && (message[i] <= 0x39)) {
+			temp = (int)(message[i] - 48);
+		}
+		else if ((message[i] >= 0x41) && (message[i] <= 0x46)) {
+			temp = (int)(message[i] - 55);
+		}
+		else if ((message[i] >= 0x61) && (message[i] <= 0x66)) {
+			temp = (int)(message[i] - 87);
+		}
+		else {
+			err = 1;
+			break;
+		}
+		val_l += (temp << (4 * (length - i - 1)));
+	}
+	if (err == 0) {
+		for (i = 0; i < 4; i++) {
+			dAddr[i] = val_h >> ((4 - i - 1) * 8);
+			dAddr[4 + i] = val_l >> ((4 - i - 1) * 8);
+		}
+		para = 0x4;
+		err = RemoteXbeeMsg(dAddr, "SM", &para, 1);
+	}
+
+	if (err == 0) {
+		AfxMessageBox(_T("The remote XBee enters sleep mode successfully"));
+	}
+	else {
+		AfxMessageBox(_T("Error occurs, please try again."));
 	}
 }

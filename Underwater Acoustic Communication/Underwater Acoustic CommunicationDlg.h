@@ -31,6 +31,7 @@ public:
 
 	static DWORD WINAPI DownloadThread(LPVOID lpPara);
 	static DWORD WINAPI ScanThread(LPVOID lpPara);
+	static DWORD WINAPI WakeupThread(LPVOID lpPara);
 	static DWORD WINAPI MonitorThread(LPVOID lpPara);
 
 	void AnsiToUnicode(WCHAR* str, const char* szStr);
@@ -45,6 +46,7 @@ public:
 	int CheckACK(char* message, int subCmd);
 	int Download(char* remote_addr);
 	int ScanNetwork(void);
+	int WakeupXbee(void);
 	int GetModemAddr(char* remote_sh, char* remote_sl, char* modemAddr);
 	int TimeSync(char* remote_sh, char* remote_sl);
 	
@@ -121,4 +123,6 @@ public:
 	afx_msg void OnClickedCheckSelects();
 	afx_msg void OnClickedCheckBeaglebone();
 	afx_msg void OnClickedCheckReserved();
+	afx_msg void OnBnClickedButtonRemotewakeup();
+	afx_msg void OnBnClickedButtonRemotsleep();
 };
