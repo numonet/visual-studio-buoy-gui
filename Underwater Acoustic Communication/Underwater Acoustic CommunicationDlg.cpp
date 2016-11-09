@@ -12,6 +12,23 @@
 #endif
 
 
+
+// monitoring data string
+#define PARA_1						"AddrBook Member 1"
+#define PARA_2						"Num of AddrMember"
+#define PARA_3						"Len of Tx Buffer"
+#define PARA_4						"Total Pkts gen"
+#define PARA_5						"Total Pkts - Tx"
+#define PARA_6						"Total Pkts - Rx"
+#define PARA_7						"Pkt No of last Tx"
+#define PARA_8						"Pkt No of last Rx"
+#define PARA_9						"TARS Tx prob"
+#define PARA_10						"Reserved"
+#define PARA_11						"Total delay"
+#define PARA_12						"Num of Tx"
+#define PARA_SPACE					"     "
+#define PARA_EQUAL					"=============="
+
 // XBee AT commands
 #define ATDH						"ATDH"
 #define ATDL						"ATDL"
@@ -90,6 +107,17 @@
 #define ST_APP_NETWORKSCAN			3
 
 
+
+typedef union {
+	float f;
+	struct {
+		unsigned int mantisa : 23;
+		unsigned int exponent : 8;
+		unsigned int sign : 1;
+	} parts;
+} double_cast;
+
+
 // XBee info from each Node
 struct XBeeInfo {
 	char myAddr[2];
@@ -108,6 +136,7 @@ struct ModemInfo {
 	char timeSync;
 	char runstop;
 	char listOffset;
+	FILE* mfile;
 };
 
 // Monitor data format from each node
@@ -127,10 +156,16 @@ struct PowerInfo {
 	char reserved;
 };
 
+
+
+
+
+
 static struct XBeeInfo g_xbeeInfo[MAX_NUM_OF_NODES];
 static struct ModemInfo g_modemInfo[MAX_NUM_OF_NODES];
 static struct MonitorInfo g_monitorInfo[MAX_NUM_OF_NODES];
 static struct PowerInfo g_powerInfo[MAX_NUM_OF_NODES];
+//static FILE* mfile[MAX_NUM_OF_NODES];
 static int g_xbeeOffset;
 static int g_endScan;
 static int g_endMonitor;
@@ -218,6 +253,8 @@ void CUnderwaterAcousticCommunicationDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHECK_Selects, m_checkSelects);
 	DDX_Control(pDX, IDC_CHECK_BEAGLEBONE, m_checkBBB);
 	DDX_Control(pDX, IDC_CHECK_RESERVED, m_checkReserved);
+	DDX_Control(pDX, IDC_CHECK_SAVEFILE, m_saveFile);
+	DDX_Control(pDX, IDC_EDIT_TIMESLOT, m_slotctl);
 }
 
 BEGIN_MESSAGE_MAP(CUnderwaterAcousticCommunicationDlg, CDialogEx)
@@ -231,17 +268,9 @@ BEGIN_MESSAGE_MAP(CUnderwaterAcousticCommunicationDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_TIMESYNC, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonTimesync)
 	ON_BN_CLICKED(IDC_BUTTON_DOWNLOAD, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonDownload)
 	ON_BN_CLICKED(IDC_BUTTON_SCAN, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonScan)
-	ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnBeginlabeleditTreeUan)
-	ON_NOTIFY(TVN_ENDLABELEDIT, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnEndlabeleditTreeUan)
 	ON_BN_CLICKED(IDC_BUTTON_UPDATECONFIGURE, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonUpdateconfigure)
-	ON_NOTIFY(TVN_SELCHANGED, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnTvnSelchangedTreeUan)
-	ON_NOTIFY(NM_RCLICK, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnRclickTreeUan)
-	ON_COMMAND(ID_TIMESYCHRONIZE_RUN, &CUnderwaterAcousticCommunicationDlg::OnTimesychronizeRun)
-	ON_COMMAND(ID_MENU_RUN, CUnderwaterAcousticCommunicationDlg::OnMenuRun)
-	ON_COMMAND(ID_MENU_STOP, CUnderwaterAcousticCommunicationDlg::OnMenuStop)
 	ON_BN_CLICKED(IDC_MONITORSTART, &CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart)
 	ON_BN_CLICKED(IDC_BUTTON_STOPSCAN, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonStopscan)
-	ON_NOTIFY(NM_CUSTOMDRAW, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnNMCustomdrawTreeUan)
 	ON_BN_CLICKED(IDC_MONITORSTOP, &CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstop)
 	ON_BN_CLICKED(IDC_CHECK_LIGHT, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckLight)
 	ON_BN_CLICKED(IDC_CHECK_Selects, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckSelects)
@@ -249,6 +278,15 @@ BEGIN_MESSAGE_MAP(CUnderwaterAcousticCommunicationDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_CHECK_RESERVED, &CUnderwaterAcousticCommunicationDlg::OnClickedCheckReserved)
 	ON_BN_CLICKED(IDC_BUTTON_REMOTEWAKEUP, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotewakeup)
 	ON_BN_CLICKED(IDC_BUTTON_REMOTSLEEP, &CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotsleep)
+	ON_NOTIFY(TVN_SELCHANGED, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnTvnSelchangedTreeUan)
+	ON_NOTIFY(NM_RCLICK, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnRclickTreeUan)
+	ON_NOTIFY(TVN_BEGINLABELEDIT, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnBeginlabeleditTreeUan)
+	ON_NOTIFY(TVN_ENDLABELEDIT, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnEndlabeleditTreeUan)
+	ON_NOTIFY(NM_CUSTOMDRAW, IDC_TREE_UAN, &CUnderwaterAcousticCommunicationDlg::OnNMCustomdrawTreeUan)
+	ON_COMMAND(ID_TIMESYCHRONIZE_RUN, &CUnderwaterAcousticCommunicationDlg::OnTimesychronizeRun)
+	ON_COMMAND(ID_MENU_RUN, CUnderwaterAcousticCommunicationDlg::OnMenuRun)
+	ON_COMMAND(ID_MENU_STOP, CUnderwaterAcousticCommunicationDlg::OnMenuStop)
+	ON_EN_CHANGE(IDC_EDIT_TIMESLOT, &CUnderwaterAcousticCommunicationDlg::OnChangeEditTimeslot)
 END_MESSAGE_MAP()
 
 
@@ -749,8 +787,8 @@ int CUnderwaterAcousticCommunicationDlg::Download(char* remote_addr)
 	// --------------------------------------------------------------------------------------------------------------------------------
 	// | Header (0xFFFF0000) | DOWNLOAD_CMD (0x0002) | Packet Length (2B) | File Type (2B) | Reserved (2B) | File Size(4B) | CRC(4B) |
 	// --------------------------------------------------------------------------------------------------------------------------------
-	sbuffer[0] = sbuffer[1] = 0xFF;
-	sbuffer[2] = sbuffer[3] = 0x00;
+	sbuffer[0] = sbuffer[1] = (BYTE)0xFF;
+	sbuffer[2] = sbuffer[3] = (BYTE)0x00;
 	sbuffer[4] = 0x00;
 	sbuffer[5] = (unsigned char)DOWNLOAD_CMD;
 	sbuffer[6] = 0x00;
@@ -1175,8 +1213,9 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::WakeupThread(LPVOID lpPara)
 DWORD WINAPI CUnderwaterAcousticCommunicationDlg::MonitorThread(LPVOID lpPara)
 {
 	CUnderwaterAcousticCommunicationDlg* p_class = static_cast<CUnderwaterAcousticCommunicationDlg*>(lpPara);
-	int i, j, crc, crc_recv, header, converter, err;
-	char wbuffer[32], rbuffer[128], addr[8];
+	int i, k, crc, crc_recv, header, converter, err;
+	char wbuffer[32], rbuffer[128];
+	char addr[8], data[16];
 	struct MonitorInfo* pInfo;
 	struct ModemInfo* pMinfo;
 	struct XBeeInfo* pXbee;
@@ -1233,23 +1272,233 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::MonitorThread(LPVOID lpPara)
 					else {
 						strItem = L"Data Err";
 					}
-					// Update monitor info in UI Table
-					// State
 					lvi.mask = LVIF_IMAGE | LVIF_TEXT;
 					lvi.iItem = pMinfo->listOffset;
+					// Update monitor info in UI Table
+					ptr = pInfo->data;
+					// AddrBook Member 1
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+									(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Number of AddrBook Member
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
 					lvi.iSubItem = 2;
 					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 					p_class->m_List.SetItem(&lvi);
-					ptr = pInfo->data;
-					for (j = 0; j < 5; j++) {
+					ptr += 4;
+					// Length of Tx buffer
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 3;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Total packets generated
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 4;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Total packets transmitted
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 5;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Total packets received
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 6;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Packet No of last transmitted packet
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 7;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Packet No of last received packet
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 8;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// TARS tansmit probability
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					temp = ((float)converter) / 10000;
+					strItem.Format(L"%.4f", temp);
+					lvi.iSubItem = 9;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Reserved
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 10;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Total delay
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					temp = ((float)converter) / 10000;
+					strItem.Format(L"%.4f", temp);
+					lvi.iSubItem = 11;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+					// Num of trans. for all packets received
+					converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+						(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+					strItem.Format(L"%d", converter);
+					lvi.iSubItem = 12;
+					lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+					p_class->m_List.SetItem(&lvi);
+					ptr += 4;
+
+					// Write to file if it is checked
+					if (pMinfo->mfile != NULL) {
+						ptr = pInfo->data;
+						// AddrBook member 1
+						memset(data, 0, sizeof(data));
 						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
-									(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
-						temp = ((float)converter) / 10000;
-						strItem.Format(L"%.4f", temp);
-						lvi.iSubItem = 3 + j;
-						lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
-						p_class->m_List.SetItem(&lvi);
+										(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (22 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
 						ptr += 4;
+						// AddrBook member 2
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (22 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Length of Tx Buffer
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (21 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Total Packets generated
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (19 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Total Packets transmitted
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (20 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Total Packets received
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (20 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Packet No of last transmitted packet
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (22 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Packet No of last received packet
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (22 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// TARS transmit probability
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						temp = ((float)converter) / 10000;
+						sprintf_s(data, "%.4f", temp);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (17 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Reserved
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (13 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// Total delay
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						temp = ((float)converter) / 10000;
+						sprintf_s(data, "%.4f", temp);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						for (k = 0; k < (16 - (int)strlen(data)); k++) {
+							fwrite(" ", sizeof(char), 1, pMinfo->mfile);
+						}
+						ptr += 4;
+						// No of trans. for all packets received
+						memset(data, 0, sizeof(data));
+						converter = (((unsigned int)ptr[0] << 24) & 0xFF000000) + (((unsigned int)ptr[1] << 16) & 0x00FF0000) +
+							(((unsigned int)ptr[2] << 8) & 0x0000FF00) + ((unsigned int)ptr[3] & 0x000000FF);
+						sprintf_s(data, "%d", converter);
+						fwrite(data, sizeof(char), strlen(data), pMinfo->mfile);
+						// The end
+						fwrite(" \n", sizeof(char), 2, pMinfo->mfile);
+
 					}
 				}
 			}
@@ -1259,6 +1508,14 @@ DWORD WINAPI CUnderwaterAcousticCommunicationDlg::MonitorThread(LPVOID lpPara)
 		}
 		Sleep(1000);
 	} while (g_endMonitor == MONITOR_RUN);
+	// Close file for each node
+	pMinfo = g_modemInfo;
+	for (i = 0; i < MAX_NUM_OF_NODES; i++) {
+		if (pMinfo->mfile != NULL) {
+			fclose(pMinfo->mfile);
+		}
+		++pMinfo;
+	}
 	g_stThread = ST_THREAD_STOP;
 
 	return 0;
@@ -1339,7 +1596,7 @@ BOOL CUnderwaterAcousticCommunicationDlg::OnInitDialog()
 	m_ulType.SetCurSel(0);
 
 	m_progress.SetRange(0, 100);
-	m_progress.SetPos(50);
+	m_progress.SetPos(0);
 
 	m_txLed.SetColor(COM_LEDGRAYON, COM_LEDGRAYOFF);
 	m_txLed.SetBlink(0);
@@ -1360,22 +1617,33 @@ BOOL CUnderwaterAcousticCommunicationDlg::OnInitDialog()
 	m_List.SetExtendedStyle(dwStyle);
 	m_List.DeleteAllItems();
 	m_List.InsertColumn(0, _T("Name"));
-	m_List.InsertColumn(1, _T("Modem Addr"));
-	m_List.InsertColumn(2, _T("State"));
-	m_List.InsertColumn(3, _T("Q Empty"));
-	m_List.InsertColumn(4, _T("TARS I"));
-	m_List.InsertColumn(5, _T("Avg Delay"));
-	m_List.InsertColumn(6, _T("Ping State"));
-	m_List.InsertColumn(7, _T("Tx State"));
-	m_List.SetColumnWidth(0, 120);
-	m_List.SetColumnWidth(1, 90);
+	m_List.InsertColumn(1, _T("AddrBook 1"));
+	m_List.InsertColumn(2, _T("Num of member"));
+	m_List.InsertColumn(3, _T("Tx buffer len"));
+	m_List.InsertColumn(4, _T("total Pkts - gen"));
+	m_List.InsertColumn(5, _T("total Pkts - tx"));
+	m_List.InsertColumn(6, _T("total Pkts - rx"));
+	m_List.InsertColumn(7, _T("Pkt No of last tx"));
+	m_List.InsertColumn(8, _T("Pkt No of last rx"));
+	m_List.InsertColumn(9, _T("TARS tx prob"));
+	m_List.InsertColumn(10, _T("Reserved"));
+	m_List.InsertColumn(11, _T("Total delay"));
+	m_List.InsertColumn(12, _T("Num of Tx"));
+	m_List.SetColumnWidth(0, 110);
+	m_List.SetColumnWidth(1, 60);
 	m_List.SetColumnWidth(2, 60);
 	m_List.SetColumnWidth(3, 80);
 	m_List.SetColumnWidth(4, 80);
 	m_List.SetColumnWidth(5, 60);
-	m_List.SetColumnWidth(6, 80);
-	m_List.SetColumnWidth(7, 80);
+	m_List.SetColumnWidth(6, 70);
+	m_List.SetColumnWidth(7, 70);
+	m_List.SetColumnWidth(8, 70);
+	m_List.SetColumnWidth(9, 70);
+	m_List.SetColumnWidth(10, 70);
+	m_List.SetColumnWidth(11, 70);
+	m_List.SetColumnWidth(12, 70);
 	//m_List.SetRedraw(FALSE);
+
 
 	HTREEITEM hItem = m_uan.InsertItem(L"Beautiful Shore", NULL, NULL);
 	m_uan.SetItemData(hItem, 0);
@@ -1389,6 +1657,7 @@ BOOL CUnderwaterAcousticCommunicationDlg::OnInitDialog()
 		memset(&g_powerInfo[i], POWER_DOWN, sizeof(struct PowerInfo));
 	}
 	m_xbeeNodeNum = 0;
+	m_slotctl.SetWindowTextW(L"2.0");
 
 	UpdateData(FALSE);
 
@@ -2246,9 +2515,9 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuRun()
 	struct XBeeInfo* pXbee;
 	struct ModemInfo* pMinfo;
 	char wbuffer[64], rbuffer[64], addr[8];
-	int i, flag, crc, pktRate;
+	int i, flag, crc, pktRate, sltTime;
 	HTREEITEM hItem, hSubItem;
-	CString str;
+	CString str, number;
 
 	if (g_stThread != ST_THREAD_STOP) {
 		AfxMessageBox(_T("One thread is running, please wait for completion or stop it manually."));
@@ -2260,18 +2529,21 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuRun()
 		return;
 	}
 
+	//UpdateData(TRUE);
 	flag = 0;
 	pXbee = &g_xbeeInfo[g_xbeeOffset];
 	pMinfo = &g_modemInfo[g_xbeeOffset];
 	if (pMinfo->runstop == MODEM_STOP) {
 		if (m_dlgPara.DoModal() == IDOK) {
+			m_slotctl.GetWindowTextW(number);
+			m_slottime = (float)_wtof(number);
 			memset(wbuffer, 0, sizeof(wbuffer));
 			wbuffer[0] = wbuffer[1] = (char)0xFF;
 			wbuffer[2] = wbuffer[3] = 0x00;
 			wbuffer[4] = 0x00;
 			wbuffer[5] = COMMON_CMD;
 			wbuffer[6] = 0x00;
-			wbuffer[7] = 16;
+			wbuffer[7] = 20;
 			wbuffer[8] = (char)(RUNSTOP_CMD >> 8);
 			wbuffer[9] = (char)RUNSTOP_CMD;
 			wbuffer[10] = wbuffer[11] = 0x00;
@@ -2289,19 +2561,25 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuRun()
 			wbuffer[17] = (char)(pktRate >> 16);
 			wbuffer[18] = (char)(pktRate >> 8);
 			wbuffer[19] = (char)pktRate;
+			// Slot Time
+			sltTime = (int)(m_slottime * 10000);
+			wbuffer[20] = (char)(sltTime >> 24);
+			wbuffer[21] = (char)(sltTime >> 16);
+			wbuffer[22] = (char)(sltTime >> 8);
+			wbuffer[23] = (char)sltTime;
 			// Reserved
-			wbuffer[20] = wbuffer[21] = 0x00;
-			wbuffer[22] = wbuffer[23] = 0x00;
+			wbuffer[24] = wbuffer[25] = 0x00;
+			wbuffer[26] = wbuffer[27] = 0x00;
 			// CRC
-			crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 16);
-			wbuffer[24] = (char)(crc >> 24);
-			wbuffer[25] = (char)(crc >> 16);
-			wbuffer[26] = (char)(crc >> 8);
-			wbuffer[27] = (char)crc;
+			crc = m_serialport.CRC32((unsigned char*)(wbuffer + 8), 20);
+			wbuffer[28] = (char)(crc >> 24);
+			wbuffer[29] = (char)(crc >> 16);
+			wbuffer[30] = (char)(crc >> 8);
+			wbuffer[31] = (char)crc;
 			memcpy(addr, pXbee->shAddr, 4);
 			memcpy((addr + 4), pXbee->slAddr, 4);
 			// Here we send Tx request frame and get Rx indicator frame in API mode
-			TxXbeeMsg(wbuffer, 28, addr, rbuffer);
+			TxXbeeMsg(wbuffer, 32, addr, rbuffer);
 		}
 		else {
 			flag = 1;
@@ -2418,8 +2696,11 @@ void CUnderwaterAcousticCommunicationDlg::OnMenuStop()
 void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 {
 	// TODO: Add your control notification handler code here
-	int i, j, check, rowCnt;
+	int i, j, check, rowCnt, loop, len;
 	LVITEM lvi;
+	WCHAR w_filename[64];
+	TCHAR w_path[MAX_PATH];
+	char c_filename[64], c_path[MAX_PATH];
 	CString strItem;
 	struct XBeeInfo* pXbee;
 	struct ModemInfo* pMinfo;
@@ -2446,47 +2727,120 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedMonitorstart()
 		}
 		if (check == 1) {
 			if (pMinfo->runstop == MODEM_RUN) {
-				// Insert the Name
 				lvi.mask = LVIF_IMAGE | LVIF_TEXT;
 				strItem = m_uan.GetItemText(hSubItem);
 				strItem = strItem.Left(strItem.GetLength() - 9);
+				// Create for to store monitoring data
+				if (m_saveFile.GetCheck() == TRUE) {
+					memset(c_path, 0, sizeof(c_path));
+					memset(c_filename, 0, sizeof(c_filename));
+					wcscpy_s(w_filename, CT2CW(strItem));
+					UnicodeToAnsi(w_filename, c_filename);
+					GetCurrentDirectory(MAX_PATH, w_path);
+					wcstombs_s((size_t*)(&len), c_path, w_path, wcslen(w_path) + 1);
+					memcpy(c_path + len - 1, "\\", 2);
+					//len += 1;
+					memcpy(c_path + len, c_filename, strlen(c_filename));
+					len += strlen(c_filename);
+					memcpy(c_path + len, ".txt", 4);
+					len += 4;
+					memset(c_path + len, 0, (MAX_PATH - len));
+					fopen_s(&(pMinfo->mfile), c_path, "w+");
+					if (pMinfo->mfile != NULL) {
+						// Write header list
+						fprintf(pMinfo->mfile, PARA_1);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_2);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_3);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_4);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_5);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_6);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_7);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_8);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_9);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_10);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_11);
+						fprintf(pMinfo->mfile, PARA_SPACE);
+						fprintf(pMinfo->mfile, PARA_12);
+						fprintf(pMinfo->mfile, "  \n");
+						for (loop = 0; loop < 15; loop++) {
+							fwrite(PARA_EQUAL, sizeof(char), sizeof(PARA_EQUAL), pMinfo->mfile);
+						}
+						fprintf(pMinfo->mfile, "  \n");
+					}
+				}
+				// Insert the Name
 				lvi.iItem = rowCnt;
 				lvi.iSubItem = 0;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.InsertItem(&lvi);
-				// Modem Address
-				strItem.Format(L"0x%x", pMinfo->addr);
-				lvi.iSubItem = 1;
-				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
-				m_List.SetItem(&lvi);
-				// State
-				strItem.Format(L"OK");
-				lvi.iSubItem = 2;
-				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
-				m_List.SetItem(&lvi);
 				// monitor data 1
 				strItem.Format(L"0");
-				lvi.iSubItem = 3;
+				lvi.iSubItem = 1;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.SetItem(&lvi);
 				// monitor data 2
 				strItem.Format(L"0");
-				lvi.iSubItem = 4;
+				lvi.iSubItem = 2;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.SetItem(&lvi);
 				// monitor data 3
 				strItem.Format(L"0");
-				lvi.iSubItem = 5;
+				lvi.iSubItem = 3;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.SetItem(&lvi);
 				// monitor data 4
 				strItem.Format(L"0");
-				lvi.iSubItem = 6;
+				lvi.iSubItem = 4;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.SetItem(&lvi);
 				// monitor data 5
 				strItem.Format(L"0");
+				lvi.iSubItem = 5;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 6
+				strItem.Format(L"0");
+				lvi.iSubItem = 6;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 7
+				strItem.Format(L"0");
 				lvi.iSubItem = 7;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 8
+				strItem.Format(L"0");
+				lvi.iSubItem = 8;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 9
+				strItem.Format(L"0");
+				lvi.iSubItem = 9;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 10
+				strItem.Format(L"0");
+				lvi.iSubItem = 10;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 11
+				strItem.Format(L"0");
+				lvi.iSubItem = 11;
+				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
+				m_List.SetItem(&lvi);
+				// monitor data 12
+				strItem.Format(L"0");
+				lvi.iSubItem = 12;
 				lvi.pszText = (LPTSTR)(LPCTSTR)(strItem);
 				m_List.SetItem(&lvi);
 
@@ -2809,4 +3163,16 @@ void CUnderwaterAcousticCommunicationDlg::OnBnClickedButtonRemotsleep()
 	else {
 		AfxMessageBox(_T("Error occurs, please try again."));
 	}
+}
+
+
+void CUnderwaterAcousticCommunicationDlg::OnChangeEditTimeslot()
+{
+	// TODO:  If this is a RICHEDIT control, the control will not
+	// send this notification unless you override the CDialogEx::OnInitDialog()
+	// function and call CRichEditCtrl().SetEventMask()
+	// with the ENM_CHANGE flag ORed into the mask.
+
+	// TODO:  Add your control notification handler code here
+
 }

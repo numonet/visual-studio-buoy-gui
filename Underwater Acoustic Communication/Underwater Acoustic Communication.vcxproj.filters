@@ -77,13 +77,10 @@
     <Image Include="res\Underwater Acoustic Communication.ico">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="res\bitmap1.bmp">
-      <Filter>Resource Files</Filter>
-    </Image>
-    <Image Include="..\..\unnamed.bmp">
-      <Filter>Resource Files</Filter>
-    </Image>
     <Image Include="res\download_s4a_icon.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="res\logo.bmp">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

@@ -65,6 +65,7 @@ public:
 	CSerialPort m_serialport;
 	CDialogPara m_dlgPara;
 
+
 	int m_xbeeNodeNum;
 	int m_runstopFlag;
 	int m_downloadType;
@@ -72,6 +73,7 @@ public:
 	int m_scantime;
 	int m_stApp;
 	unsigned char* m_downloadpBuffer;
+	float m_slottime;
 
 	CString m_xbeedh;
 	CString m_xbeedl;
@@ -84,6 +86,7 @@ public:
 	CButton m_checkSelects;
 	CButton m_checkBBB;
 	CButton m_checkReserved;
+	CButton m_saveFile;
 	CComboBox m_comport;
 	CComboBox m_baudrate;
 	CComboBox m_xbeeMode;
@@ -94,6 +97,7 @@ public:
 	CDynamicLED m_rxLed;
 	CListCtrl m_List;
 	CEdit m_filepath;
+	CEdit m_slotctl;
 	CTreeCtrl m_uan;
 	CProgressCtrl m_progress;
 
@@ -115,6 +119,7 @@ public:
 	afx_msg void OnNMCustomdrawTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnTvnSelchangedTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
 	afx_msg void OnRclickTreeUan(NMHDR *pNMHDR, LRESULT *pResult);
+	afx_msg void OnChangeEditTimeslot();
 	afx_msg void OnTimesychronizeRun();
 	afx_msg void OnClickedCheckLight();
 	afx_msg void OnClickedCheckSelects();
@@ -125,4 +130,5 @@ public:
 
 	virtual void OnOK();
 	virtual void OnCancel();
+	
 };

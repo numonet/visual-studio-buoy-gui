@@ -128,9 +128,8 @@
     <None Include="res\UnderwaterAcousticCommunication.rc2" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="..\..\unnamed.bmp" />
-    <Image Include="res\bitmap1.bmp" />
     <Image Include="res\download_s4a_icon.ico" />
+    <Image Include="res\logo.bmp" />
     <Image Include="res\Underwater Acoustic Communication.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
